@@ -1,0 +1,330 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Collaborative Pixel Canvas</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .canvas-container {
+            margin: 20px 0;
+            padding: 10px;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .control-panel {
+            margin: 20px 0;
+            padding: 20px;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: 300px;
+        }
+        .color-picker {
+            width: 100%;
+            height: 40px;
+        }
+        button {
+            padding: 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #status {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f8f8f8;
+            border-radius: 5px;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <h1>Collaborative Pixel Canvas</h1>
+    <div class="canvas-container">
+        <canvas id="pixelCanvas" width="640" height="480"></canvas>
+    </div>
+    <div class="control-panel">
+        <h3>Controls</h3>
+        <p>Click on the canvas to update your pixel</p>
+        <label for="colorPicker">Select Color:</label>
+        <input type="color" id="colorPicker" class="color-picker" value="#ff0000">
+        <button id="saveToDb">Save State to Database</button>
+        <div id="status">Ready to paint!</div>
+    </div>
+
+    <script>
+        // Initialize WebSocket connection
+        const room = new WebsimSocket();
+        let pixelCanvas;
+        let ctx;
+        let userPixels = {};
+        let lastState = "";
+        let myColor = "#ff0000";
+        let myPosition = { x: -1, y: -1 };
+
+        document.addEventListener('DOMContentLoaded', async function() {
+            pixelCanvas = document.getElementById('pixelCanvas');
+            ctx = pixelCanvas.getContext('2d');
+            const colorPicker = document.getElementById('colorPicker');
+            const statusElem = document.getElementById('status');
+            const saveToDbBtn = document.getElementById('saveToDb');
+            
+            // Clear canvas
+            clearCanvas();
+            
+            // Load user state from database
+            await loadStateFromDb();
+            
+            // Canvas click event
+            pixelCanvas.addEventListener('click', function(e) {
+                const rect = pixelCanvas.getBoundingClientRect();
+                const x = Math.floor((e.clientX - rect.left) / (rect.width / pixelCanvas.width));
+                const y = Math.floor((e.clientY - rect.top) / (rect.height / pixelCanvas.height));
+                
+                myPosition = { x, y };
+                myColor = colorPicker.value;
+                
+                // Draw the pixel
+                ctx.fillStyle = myColor;
+                ctx.fillRect(x, y, 1, 1);
+                
+                // Update status
+                statusElem.textContent = `Pixel set at (${x}, ${y}) with color ${myColor}`;
+                
+                // Update user's presence
+                room.party.updatePresence({
+                    pixelX: x,
+                    pixelY: y,
+                    pixelColor: myColor
+                });
+                
+                // Store the state in LLM
+                saveStateToLLM();
+            });
+            
+            // Color picker change event
+            colorPicker.addEventListener('change', function(e) {
+                myColor = e.target.value;
+            });
+            
+            // Save state to database button
+            saveToDbBtn.addEventListener('click', async function() {
+                statusElem.textContent = "Saving state to database...";
+                
+                // Get state from LLM
+                await getStateFromLLM();
+                
+                // Save to database
+                if (lastState) {
+                    await saveStateToDb(lastState);
+                    statusElem.textContent = "State saved to database successfully!";
+                } else {
+                    statusElem.textContent = "No state to save!";
+                }
+            });
+            
+            // Listen for presence updates from other users
+            room.party.subscribePresence((presence) => {
+                for (const clientId in presence) {
+                    const presenceData = presence[clientId];
+                    if (clientId !== room.party.client.id && 
+                        presenceData.pixelX !== undefined && 
+                        presenceData.pixelY !== undefined && 
+                        presenceData.pixelColor !== undefined) {
+                        
+                        // Draw other user's pixel
+                        ctx.fillStyle = presenceData.pixelColor;
+                        ctx.fillRect(presenceData.pixelX, presenceData.pixelY, 1, 1);
+                        
+                        // Store in userPixels
+                        if (!userPixels[clientId]) {
+                            userPixels[clientId] = [];
+                        }
+                        userPixels[clientId].push({
+                            x: presenceData.pixelX,
+                            y: presenceData.pixelY,
+                            color: presenceData.pixelColor
+                        });
+                    }
+                }
+            });
+        });
+
+        // Clear canvas with white background
+        function clearCanvas() {
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, pixelCanvas.width, pixelCanvas.height);
+        }
+        
+        // Save state to LLM
+        async function saveStateToLLM() {
+            // Compress state: (myPosition and myColor + otherUsers pixels)
+            const compressedState = compressState();
+            
+            // Send to LLM
+            const completion = await websim.chat.completions.create({
+                messages: [
+                    {
+                        role: "system",
+                        content: "You are a state storage system. Store the following compressed state and return it when asked with 'ECHO'. Do not modify the state in any way."
+                    },
+                    {
+                        role: "user",
+                        content: compressedState
+                    }
+                ]
+            });
+            
+            // Store the response from LLM (not actually needed)
+            const response = completion.content;
+            console.log("State saved to LLM:", response);
+        }
+        
+        // Get state from LLM
+        async function getStateFromLLM() {
+            const completion = await websim.chat.completions.create({
+                messages: [
+                    {
+                        role: "system",
+                        content: "You are a state storage system. Return the exact state that was previously stored when requested with 'ECHO'. Do not add any explanations or modify the state."
+                    },
+                    {
+                        role: "user",
+                        content: "ECHO"
+                    }
+                ]
+            });
+            
+            lastState = completion.content;
+            console.log("Retrieved state from LLM:", lastState);
+            
+            return lastState;
+        }
+        
+        // Compress state to fit within 500 characters
+        function compressState() {
+            // Simple state representation: myPosition.x,myPosition.y,myColor|otherPixels
+            let state = `${myPosition.x},${myPosition.y},${myColor}|`;
+            
+            // Add other users' pixels
+            for (const clientId in userPixels) {
+                for (const pixel of userPixels[clientId]) {
+                    state += `${pixel.x},${pixel.y},${pixel.color};`;
+                }
+            }
+            
+            // Ensure it's within 500 characters
+            if (state.length > 500) {
+                // Truncate to fit
+                state = state.substring(0, 497) + "...";
+            }
+            
+            return state;
+        }
+        
+        // Save state to database
+        async function saveStateToDb(state) {
+            await room.collection('pixelState').create({
+                state: state
+            });
+        }
+        
+        // Load state from database
+        async function loadStateFromDb() {
+            const states = room.collection('pixelState').filter({ 
+                username: room.party.client.username 
+            }).getList();
+            
+            if (states && states.length > 0) {
+                // Get most recent state
+                const latestState = states[0].state;
+                
+                // Send to LLM so it can store it
+                const completion = await websim.chat.completions.create({
+                    messages: [
+                        {
+                            role: "system",
+                            content: "You are a state storage system. Store the following compressed state and return it when asked with 'ECHO'. Do not modify the state in any way."
+                        },
+                        {
+                            role: "user",
+                            content: latestState
+                        }
+                    ]
+                });
+                
+                // Apply the state to canvas
+                applyState(latestState);
+                
+                document.getElementById('status').textContent = "State loaded from database!";
+            }
+        }
+        
+        // Apply state to canvas
+        function applyState(state) {
+            if (!state) return;
+            
+            try {
+                const parts = state.split('|');
+                if (parts.length >= 1) {
+                    // My pixel
+                    const myParts = parts[0].split(',');
+                    if (myParts.length >= 3) {
+                        const x = parseInt(myParts[0]);
+                        const y = parseInt(myParts[1]);
+                        const color = myParts[2];
+                        
+                        if (x >= 0 && y >= 0) {
+                            ctx.fillStyle = color;
+                            ctx.fillRect(x, y, 1, 1);
+                            
+                            myPosition = { x, y };
+                            myColor = color;
+                            document.getElementById('colorPicker').value = color;
+                        }
+                    }
+                    
+                    // Other pixels
+                    if (parts.length > 1 && parts[1]) {
+                        const otherPixels = parts[1].split(';');
+                        for (const pixelStr of otherPixels) {
+                            if (pixelStr) {
+                                const pixelParts = pixelStr.split(',');
+                                if (pixelParts.length >= 3) {
+                                    const x = parseInt(pixelParts[0]);
+                                    const y = parseInt(pixelParts[1]);
+                                    const color = pixelParts[2];
+                                    
+                                    ctx.fillStyle = color;
+                                    ctx.fillRect(x, y, 1, 1);
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error("Error applying state:", e);
+            }
+        }
+    </script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4c6229722a6346bc8eb5cb0e5eae5d41","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+</html>
