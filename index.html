@@ -54,6 +54,18 @@
             border-radius: 5px;
             font-style: italic;
         }
+        .debug-console {
+            width: 300px;
+            height: 200px;
+            margin: 20px 0;
+            padding: 10px;
+            background-color: #000;
+            color: #0f0;
+            border-radius: 10px;
+            font-family: monospace;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
     </style>
 </head>
 <body>
@@ -69,6 +81,8 @@
         <button id="saveToDb">Save State to Database</button>
         <div id="status">Ready to paint!</div>
     </div>
+    
+    <div class="debug-console" id="debugConsole">Debug Console: LLM Interactions</div>
 
     <script>
         // Initialize WebSocket connection
@@ -86,6 +100,14 @@
             const colorPicker = document.getElementById('colorPicker');
             const statusElem = document.getElementById('status');
             const saveToDbBtn = document.getElementById('saveToDb');
+            const debugConsole = document.getElementById('debugConsole');
+            
+            // Function to log debug messages
+            function logDebug(message) {
+                const timestamp = new Date().toLocaleTimeString();
+                debugConsole.innerHTML += `\n[${timestamp}] ${message}`;
+                debugConsole.scrollTop = debugConsole.scrollHeight;
+            }
             
             // Clear canvas
             clearCanvas();
@@ -103,8 +125,7 @@
                 myColor = colorPicker.value;
                 
                 // Draw the pixel
-                ctx.fillStyle = myColor;
-                ctx.fillRect(x, y, 1, 1);
+                drawPixel(x, y, myColor);
                 
                 // Update status
                 statusElem.textContent = `Pixel set at (${x}, ${y}) with color ${myColor}`;
@@ -151,8 +172,7 @@
                         presenceData.pixelColor !== undefined) {
                         
                         // Draw other user's pixel
-                        ctx.fillStyle = presenceData.pixelColor;
-                        ctx.fillRect(presenceData.pixelX, presenceData.pixelY, 1, 1);
+                        drawPixel(presenceData.pixelX, presenceData.pixelY, presenceData.pixelColor);
                         
                         // Store in userPixels
                         if (!userPixels[clientId]) {
@@ -168,6 +188,17 @@
             });
         });
 
+        // Function to draw a pixel (enlarged for visibility)
+        function drawPixel(x, y, color) {
+            ctx.fillStyle = color;
+            ctx.fillRect(x, y, 1, 1);
+            
+            // Draw a temporary larger indicator for visibility
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 0.2;
+            ctx.strokeRect(x - 0.5, y - 0.5, 2, 2);
+        }
+
         // Clear canvas with white background
         function clearCanvas() {
             ctx.fillStyle = 'white';
@@ -180,6 +211,9 @@
             const compressedState = compressState();
             
             try {
+                // Log request to debug console
+                document.getElementById('debugConsole').innerHTML += `\n[REQUEST] Saving state: ${compressedState}`;
+                
                 // Send to LLM
                 const completion = await websim.chat.completions.create({
                     messages: [
@@ -196,16 +230,27 @@
                 
                 // Store the response from LLM (not actually needed)
                 const response = completion.content;
+                
+                // Log response to debug console
+                document.getElementById('debugConsole').innerHTML += `\n[RESPONSE] LLM stored state: ${response}`;
+                document.getElementById('debugConsole').scrollTop = document.getElementById('debugConsole').scrollHeight;
+                
                 console.log("State saved to LLM:", response);
             } catch (error) {
                 console.error("Error saving state to LLM:", error);
                 document.getElementById('status').textContent = "Error saving state: " + error.message;
+                document.getElementById('debugConsole').innerHTML += `\n[ERROR] ${error.message}`;
+                document.getElementById('debugConsole').scrollTop = document.getElementById('debugConsole').scrollHeight;
             }
         }
         
         // Get state from LLM
         async function getStateFromLLM() {
             try {
+                // Log request to debug console
+                document.getElementById('debugConsole').innerHTML += `\n[REQUEST] ECHO command sent to LLM`;
+                document.getElementById('debugConsole').scrollTop = document.getElementById('debugConsole').scrollHeight;
+                
                 const completion = await websim.chat.completions.create({
                     messages: [
                         {
@@ -220,12 +265,19 @@
                 });
                 
                 lastState = completion.content;
+                
+                // Log response to debug console
+                document.getElementById('debugConsole').innerHTML += `\n[RESPONSE] LLM returned: ${lastState}`;
+                document.getElementById('debugConsole').scrollTop = document.getElementById('debugConsole').scrollHeight;
+                
                 console.log("Retrieved state from LLM:", lastState);
                 
                 return lastState;
             } catch (error) {
                 console.error("Error retrieving state from LLM:", error);
                 document.getElementById('status').textContent = "Error retrieving state: " + error.message;
+                document.getElementById('debugConsole').innerHTML += `\n[ERROR] ${error.message}`;
+                document.getElementById('debugConsole').scrollTop = document.getElementById('debugConsole').scrollHeight;
                 return "";
             }
         }
@@ -321,8 +373,7 @@
                         const color = myParts[2];
                         
                         if (x >= 0 && y >= 0) {
-                            ctx.fillStyle = color;
-                            ctx.fillRect(x, y, 1, 1);
+                            drawPixel(x, y, color);
                             
                             myPosition = { x, y };
                             myColor = color;
@@ -341,8 +392,7 @@
                                     const y = parseInt(pixelParts[1]);
                                     const color = pixelParts[2];
                                     
-                                    ctx.fillStyle = color;
-                                    ctx.fillRect(x, y, 1, 1);
+                                    drawPixel(x, y, color);
                                 }
                             }
                         }
@@ -350,6 +400,8 @@
                 }
             } catch (e) {
                 console.error("Error applying state:", e);
+                document.getElementById('debugConsole').innerHTML += `\n[ERROR] Error applying state: ${e.message}`;
+                document.getElementById('debugConsole').scrollTop = document.getElementById('debugConsole').scrollHeight;
             }
         }
     </script>
