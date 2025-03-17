@@ -179,44 +179,55 @@
             // Compress state: (myPosition and myColor + otherUsers pixels)
             const compressedState = compressState();
             
-            // Send to LLM
-            const completion = await websim.chat.completions.create({
-                messages: [
-                    {
-                        role: "system",
-                        content: "You are a state storage system. Store the following compressed state and return it when asked with 'ECHO'. Do not modify the state in any way."
-                    },
-                    {
-                        role: "user",
-                        content: compressedState
-                    }
-                ]
-            });
-            
-            // Store the response from LLM (not actually needed)
-            const response = completion.content;
-            console.log("State saved to LLM:", response);
+            try {
+                // Send to LLM
+                const completion = await websim.chat.completions.create({
+                    messages: [
+                        {
+                            role: "system",
+                            content: "You are a state storage system. Store the following compressed state and return it when asked with 'ECHO'. Do not modify the state in any way."
+                        },
+                        {
+                            role: "user",
+                            content: compressedState
+                        }
+                    ]
+                });
+                
+                // Store the response from LLM (not actually needed)
+                const response = completion.content;
+                console.log("State saved to LLM:", response);
+            } catch (error) {
+                console.error("Error saving state to LLM:", error);
+                document.getElementById('status').textContent = "Error saving state: " + error.message;
+            }
         }
         
         // Get state from LLM
         async function getStateFromLLM() {
-            const completion = await websim.chat.completions.create({
-                messages: [
-                    {
-                        role: "system",
-                        content: "You are a state storage system. Return the exact state that was previously stored when requested with 'ECHO'. Do not add any explanations or modify the state."
-                    },
-                    {
-                        role: "user",
-                        content: "ECHO"
-                    }
-                ]
-            });
-            
-            lastState = completion.content;
-            console.log("Retrieved state from LLM:", lastState);
-            
-            return lastState;
+            try {
+                const completion = await websim.chat.completions.create({
+                    messages: [
+                        {
+                            role: "system",
+                            content: "You are a state storage system. Return the exact state that was previously stored when requested with 'ECHO'. Do not add any explanations or modify the state."
+                        },
+                        {
+                            role: "user",
+                            content: "ECHO"
+                        }
+                    ]
+                });
+                
+                lastState = completion.content;
+                console.log("Retrieved state from LLM:", lastState);
+                
+                return lastState;
+            } catch (error) {
+                console.error("Error retrieving state from LLM:", error);
+                document.getElementById('status').textContent = "Error retrieving state: " + error.message;
+                return "";
+            }
         }
         
         // Compress state to fit within 500 characters
@@ -242,39 +253,56 @@
         
         // Save state to database
         async function saveStateToDb(state) {
-            await room.collection('pixelState').create({
-                state: state
-            });
+            try {
+                await room.collection('pixelState').create({
+                    state: state
+                });
+            } catch (error) {
+                console.error("Error saving to database:", error);
+                document.getElementById('status').textContent = "Error saving to database: " + error.message;
+            }
         }
         
         // Load state from database
         async function loadStateFromDb() {
-            const states = room.collection('pixelState').filter({ 
-                username: room.party.client.username 
-            }).getList();
-            
-            if (states && states.length > 0) {
-                // Get most recent state
-                const latestState = states[0].state;
+            try {
+                const states = room.collection('pixelState').filter({ 
+                    username: room.party.client.username 
+                }).getList();
                 
-                // Send to LLM so it can store it
-                const completion = await websim.chat.completions.create({
-                    messages: [
-                        {
-                            role: "system",
-                            content: "You are a state storage system. Store the following compressed state and return it when asked with 'ECHO'. Do not modify the state in any way."
-                        },
-                        {
-                            role: "user",
-                            content: latestState
-                        }
-                    ]
-                });
-                
-                // Apply the state to canvas
-                applyState(latestState);
-                
-                document.getElementById('status').textContent = "State loaded from database!";
+                if (states && states.length > 0) {
+                    // Get most recent state
+                    const latestState = states[0].state;
+                    
+                    try {
+                        // Send to LLM so it can store it
+                        const completion = await websim.chat.completions.create({
+                            messages: [
+                                {
+                                    role: "system",
+                                    content: "You are a state storage system. Store the following compressed state and return it when asked with 'ECHO'. Do not modify the state in any way."
+                                },
+                                {
+                                    role: "user",
+                                    content: latestState
+                                }
+                            ]
+                        });
+                        
+                        // Apply the state to canvas
+                        applyState(latestState);
+                        
+                        document.getElementById('status').textContent = "State loaded from database!";
+                    } catch (error) {
+                        console.error("Error storing loaded state in LLM:", error);
+                        document.getElementById('status').textContent = "Error storing loaded state: " + error.message;
+                        // Still apply the state from database even if LLM storage fails
+                        applyState(latestState);
+                    }
+                }
+            } catch (error) {
+                console.error("Error loading from database:", error);
+                document.getElementById('status').textContent = "Error loading from database: " + error.message;
             }
         }
         
