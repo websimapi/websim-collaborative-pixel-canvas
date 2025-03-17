@@ -242,7 +242,7 @@
                     messages: [
                         {
                             role: "system",
-                            content: "You are a state storage system. You will receive a 500-character string representing application state. Your only job is to store this string and echo it back unchanged when requested. When the user sends you a state string, respond by repeating the exact same state string. When the user sends 'ECHO', respond with the last state string you stored. Never add any explanations, comments, or formatting. Only respond with the exact string provided or stored."
+                            content: "You are a state storage system for a pixel art canvas. You have one job: store the last state string sent to you (always 500 characters) and return it exactly when requested. Rules: 1) If user sends a 500-character string, store it and echo it back without changes. 2) If user sends the word 'ECHO', respond with the last stored state string. 3) NEVER add explanations or formatting. 4) NEVER respond with the literal word 'ECHO' - always return the stored state. 5) NEVER change the state - return it exactly as stored."
                         },
                         {
                             role: "user",
@@ -279,7 +279,7 @@
                     messages: [
                         {
                             role: "system",
-                            content: "You are a state storage system. You will receive a 500-character string representing application state. Your only job is to store this string and echo it back unchanged when requested. When the user sends you a state string, respond by repeating the exact same state string. When the user sends 'ECHO', respond with the last state string you stored. Never add any explanations, comments, or formatting. Only respond with the exact string provided or stored."
+                            content: "You are a state storage system for a pixel art canvas. You have one job: store the last state string sent to you (always 500 characters) and return it exactly when requested. Rules: 1) If user sends a 500-character string, store it and echo it back without changes. 2) If user sends the word 'ECHO', respond with the last stored state string. 3) NEVER add explanations or formatting. 4) NEVER respond with the literal word 'ECHO' - always return the stored state. 5) NEVER change the state - return it exactly as stored."
                         },
                         {
                             role: "user",
@@ -371,7 +371,7 @@
                             messages: [
                                 {
                                     role: "system",
-                                    content: "You are a state storage system. You will receive a 500-character string representing application state. Your only job is to store this string and echo it back unchanged when requested. When the user sends you a state string, respond by repeating the exact same state string. When the user sends 'ECHO', respond with the last state string you stored. Never add any explanations, comments, or formatting. Only respond with the exact string provided or stored."
+                                    content: "You are a state storage system for a pixel art canvas. You have one job: store the last state string sent to you (always 500 characters) and return it exactly when requested. Rules: 1) If user sends a 500-character string, store it and echo it back without changes. 2) If user sends the word 'ECHO', respond with the last stored state string. 3) NEVER add explanations or formatting. 4) NEVER respond with the literal word 'ECHO' - always return the stored state. 5) NEVER change the state - return it exactly as stored."
                                 },
                                 {
                                     role: "user",
