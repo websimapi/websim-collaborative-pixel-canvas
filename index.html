@@ -151,12 +151,17 @@
                 statusElem.textContent = "Saving state to database...";
                 
                 // Get state from LLM
-                await getStateFromLLM();
+                const currentState = await getStateFromLLM();
                 
                 // Save to database
-                if (lastState) {
-                    await saveStateToDb(lastState);
-                    statusElem.textContent = "State saved to database successfully!";
+                if (currentState) {
+                    try {
+                        await saveStateToDb(currentState);
+                        statusElem.textContent = "State saved to database successfully!";
+                    } catch (error) {
+                        statusElem.textContent = "Error saving to database: " + error.message;
+                        console.error("Error saving to database:", error);
+                    }
                 } else {
                     statusElem.textContent = "No state to save!";
                 }
@@ -193,6 +198,23 @@
             ctx.fillStyle = color;
             ctx.fillRect(x, y, 1, 1);
             
+            // Store my pixels in userPixels too
+            if (x === myPosition.x && y === myPosition.y) {
+                if (!userPixels[room.party.client.id]) {
+                    userPixels[room.party.client.id] = [];
+                }
+                // Check if this pixel already exists
+                const existingIndex = userPixels[room.party.client.id].findIndex(
+                    p => p.x === x && p.y === y
+                );
+                
+                if (existingIndex >= 0) {
+                    userPixels[room.party.client.id][existingIndex].color = color;
+                } else {
+                    userPixels[room.party.client.id].push({ x, y, color });
+                }
+            }
+            
             // Draw a temporary larger indicator for visibility
             ctx.strokeStyle = 'black';
             ctx.lineWidth = 0.2;
@@ -213,13 +235,14 @@
             try {
                 // Log request to debug console
                 document.getElementById('debugConsole').innerHTML += `\n[REQUEST] Saving state: ${compressedState}`;
+                document.getElementById('debugConsole').scrollTop = document.getElementById('debugConsole').scrollHeight;
                 
                 // Send to LLM
                 const completion = await websim.chat.completions.create({
                     messages: [
                         {
                             role: "system",
-                            content: "You are a state storage system. Store exactly what the user sends you. When you receive data, store it and respond by repeating the exact same data back. When you receive the command 'ECHO', respond with the last data you stored. Never add explanations or modify the data in any way."
+                            content: "You are a state storage system. You will receive a 500-character string representing application state. Your only job is to store this string and echo it back unchanged when requested. When the user sends you a state string, respond by repeating the exact same state string. When the user sends 'ECHO', respond with the last state string you stored. Never add any explanations, comments, or formatting. Only respond with the exact string provided or stored."
                         },
                         {
                             role: "user",
@@ -256,7 +279,7 @@
                     messages: [
                         {
                             role: "system",
-                            content: "You are a state storage system. Store exactly what the user sends you. When you receive data, store it and respond by repeating the exact same data back. When you receive the command 'ECHO', respond with the last data you stored. Never add explanations or modify the data in any way."
+                            content: "You are a state storage system. You will receive a 500-character string representing application state. Your only job is to store this string and echo it back unchanged when requested. When the user sends you a state string, respond by repeating the exact same state string. When the user sends 'ECHO', respond with the last state string you stored. Never add any explanations, comments, or formatting. Only respond with the exact string provided or stored."
                         },
                         {
                             role: "user",
@@ -265,15 +288,15 @@
                     ]
                 });
                 
-                lastState = completion.content;
+                const receivedState = completion.content;
                 
                 // Log response to debug console
-                document.getElementById('debugConsole').innerHTML += `\n[RESPONSE] LLM returned: ${lastState}`;
+                document.getElementById('debugConsole').innerHTML += `\n[RESPONSE] LLM returned: ${receivedState}`;
                 document.getElementById('debugConsole').scrollTop = document.getElementById('debugConsole').scrollHeight;
                 
-                console.log("Retrieved state from LLM:", lastState);
+                console.log("Retrieved state from LLM:", receivedState);
                 
-                return lastState;
+                return receivedState;
             } catch (error) {
                 console.error("Error retrieving state from LLM:", error);
                 document.getElementById('status').textContent = "Error retrieving state: " + error.message;
@@ -285,22 +308,30 @@
         
         // Compress state to fit within 500 characters
         function compressState() {
-            // Simple state representation: myPosition.x,myPosition.y,myColor|otherPixels
+            // Format: myPosition.x,myPosition.y,myColor|pixel1;pixel2;...
+            // Where each pixel is x,y,color
+            
+            // Start with my position and color
             let state = `${myPosition.x},${myPosition.y},${myColor}|`;
             
-            // Add other users' pixels
+            // Add all pixels (including my own) in a compressed format
+            let pixelData = "";
             for (const clientId in userPixels) {
                 for (const pixel of userPixels[clientId]) {
-                    state += `${pixel.x},${pixel.y},${pixel.color};`;
+                    pixelData += `${pixel.x},${pixel.y},${pixel.color};`;
                 }
             }
             
-            // Ensure it's exactly 500 characters by padding with spaces if needed
-            if (state.length < 500) {
-                state = state.padEnd(500, ' ');
-            } else if (state.length > 500) {
+            // Combine the state and truncate if needed
+            state += pixelData;
+            
+            // Ensure it's exactly 500 characters
+            if (state.length > 500) {
                 // Truncate to fit
                 state = state.substring(0, 500);
+            } else if (state.length < 500) {
+                // Pad with spaces
+                state = state.padEnd(500, ' ');
             }
             
             return state;
@@ -312,22 +343,27 @@
                 await room.collection('pixelState').create({
                     state: state
                 });
+                return true;
             } catch (error) {
                 console.error("Error saving to database:", error);
                 document.getElementById('status').textContent = "Error saving to database: " + error.message;
+                document.getElementById('debugConsole').innerHTML += `\n[ERROR] Failed to save to DB: ${error.message}`;
+                document.getElementById('debugConsole').scrollTop = document.getElementById('debugConsole').scrollHeight;
+                return false;
             }
         }
         
         // Load state from database
         async function loadStateFromDb() {
             try {
-                const states = room.collection('pixelState').filter({ 
-                    username: room.party.client.username 
-                }).getList();
+                const states = room.collection('pixelState').getList();
                 
                 if (states && states.length > 0) {
-                    // Get most recent state
+                    // Sort by created_at to get most recent state
+                    states.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
                     const latestState = states[0].state;
+                    
+                    document.getElementById('debugConsole').innerHTML += `\n[INFO] Loaded state from DB: ${latestState}`;
                     
                     try {
                         // Send to LLM so it can store it
@@ -335,7 +371,7 @@
                             messages: [
                                 {
                                     role: "system",
-                                    content: "You are a state storage system. Store exactly what the user sends you. When you receive data, store it and respond by repeating the exact same data back. When you receive the command 'ECHO', respond with the last data you stored. Never add explanations or modify the data in any way."
+                                    content: "You are a state storage system. You will receive a 500-character string representing application state. Your only job is to store this string and echo it back unchanged when requested. When the user sends you a state string, respond by repeating the exact same state string. When the user sends 'ECHO', respond with the last state string you stored. Never add any explanations, comments, or formatting. Only respond with the exact string provided or stored."
                                 },
                                 {
                                     role: "user",
@@ -358,6 +394,8 @@
             } catch (error) {
                 console.error("Error loading from database:", error);
                 document.getElementById('status').textContent = "Error loading from database: " + error.message;
+                document.getElementById('debugConsole').innerHTML += `\n[ERROR] Failed to load from DB: ${error.message}`;
+                document.getElementById('debugConsole').scrollTop = document.getElementById('debugConsole').scrollHeight;
             }
         }
         
