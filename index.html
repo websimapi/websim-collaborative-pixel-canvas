@@ -219,7 +219,7 @@
                     messages: [
                         {
                             role: "system",
-                            content: "You are a state storage system. Your only job is to store and return data exactly as provided. When I send you data, store it and respond with only 'OK'. When I send the command 'ECHO', respond with only the exact data you stored previously. Do not add any explanations, formatting, or modifications to the data."
+                            content: "You are a state storage system. Store exactly what the user sends you. When you receive data, store it and respond by repeating the exact same data back. When you receive the command 'ECHO', respond with the last data you stored. Never add explanations or modify the data in any way."
                         },
                         {
                             role: "user",
@@ -228,8 +228,9 @@
                     ]
                 });
                 
-                // Store the response from LLM (not actually needed)
+                // Store the response from LLM
                 const response = completion.content;
+                lastState = response; // Store the state immediately when saved
                 
                 // Log response to debug console
                 document.getElementById('debugConsole').innerHTML += `\n[RESPONSE] LLM stored state: ${response}`;
@@ -255,7 +256,7 @@
                     messages: [
                         {
                             role: "system",
-                            content: "You are a state storage system. Your only job is to store and return data exactly as provided. When I send you data, store it and respond with only 'OK'. When I send the command 'ECHO', respond with only the exact data you stored previously. Do not add any explanations, formatting, or modifications to the data."
+                            content: "You are a state storage system. Store exactly what the user sends you. When you receive data, store it and respond by repeating the exact same data back. When you receive the command 'ECHO', respond with the last data you stored. Never add explanations or modify the data in any way."
                         },
                         {
                             role: "user",
@@ -294,10 +295,12 @@
                 }
             }
             
-            // Ensure it's within 500 characters
-            if (state.length > 500) {
+            // Ensure it's exactly 500 characters by padding with spaces if needed
+            if (state.length < 500) {
+                state = state.padEnd(500, ' ');
+            } else if (state.length > 500) {
                 // Truncate to fit
-                state = state.substring(0, 497) + "...";
+                state = state.substring(0, 500);
             }
             
             return state;
@@ -332,7 +335,7 @@
                             messages: [
                                 {
                                     role: "system",
-                                    content: "You are a state storage system. Your only job is to store and return data exactly as provided. When I send you data, store it and respond with only 'OK'. When I send the command 'ECHO', respond with only the exact data you stored previously. Do not add any explanations, formatting, or modifications to the data."
+                                    content: "You are a state storage system. Store exactly what the user sends you. When you receive data, store it and respond by repeating the exact same data back. When you receive the command 'ECHO', respond with the last data you stored. Never add explanations or modify the data in any way."
                                 },
                                 {
                                     role: "user",
